@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <title>Refleksomierzacz - Gra</title>
+    <style>
+        :root {
+            --bg-color: #f4f4f9;
+            --primary: #0B3954;
+            --danger: #FF6B6B;
+            --success: #4ECDC4;
+        }
+        body { font-family: 'Segoe UI', Arial, sans-serif; background: var(--bg-color); text-align: center; padding: 20px; }
+
+        /* Obszar klikania */
+        #click-area {
+            width: 80%;
+            max-width: 500px;
+            height: 300px;
+            background-color: #fff;
+            border: 4px solid var(--primary);
+            border-radius: 15px;
+            margin: 20px auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 1.5rem;
+            font-weight: bold;
+            transition: all 0.1s ease;
+            user-select: none;
+        }
+        #click-area.waiting { background-color: var(--danger); color: white; }
+
+        /* Przyciski i Formularz */
+        .controls { margin-bottom: 20px; }
+        button { padding: 10px 25px; font-size: 1rem; cursor: pointer; border: none; border-radius: 5px; color: white; }
+        #btn-start { background-color: #2ecc71; }
+        #btn-stop { background-color: #e74c3c; display: none; }
+
+        /* Panel Statystyk */
+        #stats-panel {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            display: inline-block;
+            margin-top: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            min-width: 300px;
+            visibility: hidden;
+        }
+        .stat-row { display: flex; justify-content: space-between; margin: 5px 0; border-bottom: 1px solid #eee; }
+    </style>
+</head>
+<body>
+
+<h1>Refleksomierzacz</h1>
+
+<div class="controls">
+    Liczba prób: <input type="number" id="rounds-count" value="5" min="1" style="width: 40px;">
+    Tryb:
+    <select id="game-mode">
+        <option value="click">Myszka (Klik)</option>
+        <option value="key">Klawiatura (Spacja)</option>
+    </select>
+    <br><br>
+    <button id="btn-start" onclick="startGame()">Start</button>
+    <button id="btn-stop" onclick="stopGame()">Stop</button>
+</div>
+
+<div id="click-area" onclick="handleInput('click')">
+    Naciśnij Start, aby zacząć
+</div>
+
+<div id="stats-panel">
+    <h3>Statystyki sesji</h3>
+    <div class="stat-row"><span>Najkrótszy czas:</span> <strong id="stat-min">-</strong></div>
+    <div class="stat-row"><span>Najdłuższy czas:</span> <strong id="stat-max">-</strong></div>
+    <div class="stat-row"><span>Średni czas:</span> <strong id="stat-avg">-</strong></div>
+    <div class="stat-row"><span>Falstarty:</span> <strong id="stat-fails">0</strong></div>
+    <div class="stat-row" style="color: gold; margin-top: 10px;">
+        <span>Rekord życiowy:</span> <strong id="stat-best">-</strong>
+    </div>
+</div>
+
+<script>
+    let gameInProgress = false;
+    let isColorChanged = false;
+    let startTime, timeoutId;
+    let times = [];
+    let falseStarts = 0;
+    let currentRound = 0;
+    let maxRounds = 5;
+
+    // Pobieranie rekordu z pamięci przeglądarki
+    let bestScore = localStorage.getItem('bestReflex') || Infinity;
+    if (bestScore !== Infinity) document.getElementById('stat-best').innerText = bestScore + " ms";
+
+    function startGame() {
+        maxRounds = parseInt(document.getElementById('rounds-count').value);
+        times = [];
+        falseStarts = 0;
+        currentRound = 0;
+        gameInProgress = true;
+
+        document.getElementById('btn-start').style.display = 'none';
+        document.getElementById('btn-stop').style.display = 'inline-block';
+        document.getElementById('stats-panel').style.visibility = 'hidden';
+        document.getElementById('stat-fails').innerText = "0";
+
+        nextRound();
+    }
+
+    function stopGame() {
+        clearTimeout(timeoutId);
+        gameInProgress = false;
+        isColorChanged = false;
+        resetArea("Gra przerwana. Naciśnij Start.");
+        document.getElementById('btn-start').style.display = 'inline-block';
+        document.getElementById('btn-stop').style.display = 'none';
+    }
+
+    function nextRound() {
+        if (currentRound >= maxRounds) {
+            endGame();
+            return;
+        }
+        isColorChanged = false;
+        resetArea("Czekaj na kolor...");
+
+        // Losowy czas 1-4 sekundy [cite: 122]
+        const randomDelay = Math.floor(Math.random() * 3000) + 1000;
+        timeoutId = setTimeout(changeColor, randomDelay);
+    }
+
+    function changeColor() {
+        isColorChanged = true;
+        startTime = Date.now(); // [cite: 124, 125]
+        const area = document.getElementById('click-area');
+        area.classList.add('waiting');
+        area.innerText = "KLIKAJ!";
+    }
+
+    function handleInput(type) {
+        if (!gameInProgress) return;
+
+        const selectedMode = document.getElementById('game-mode').value;
+        if (type !== selectedMode && selectedMode === 'key') return;
+
+        if (isColorChanged) {
+            const reactionTime = Date.now() - startTime;
+            times.push(reactionTime);
+            currentRound++;
+            showStats();
+            nextRound();
+        } else {
+            // Zliczanie kliknięć przed zmianą (falstart)
+            falseStarts++;
+            document.getElementById('stat-fails').innerText = falseStarts;
+            clearTimeout(timeoutId);
+            alert("Falstart!");
+            nextRound();
+        }
+    }
+
+    // Obsługa klawiatury
+    window.addEventListener('keydown', (e) => {
+        if (e.code === 'Space') {
+            e.preventDefault(); // zapobiega przewijaniu strony spacją
+            handleInput('key');
+        }
+    });
+
+    function showStats() {
+        const min = Math.min(...times);
+        const max = Math.max(...times);
+        const avg = times.reduce((a, b) => a + b, 0) / times.length;
+
+        document.getElementById('stat-min').innerText = min + " ms";
+        document.getElementById('stat-max').innerText = max + " ms";
+        document.getElementById('stat-avg').innerText = Math.round(avg) + " ms";
+        document.getElementById('stats-panel').style.visibility = 'visible';
+
+        if (min < bestScore) {
+            bestScore = min;
+            localStorage.setItem('bestReflex', bestScore);
+            document.getElementById('stat-best').innerText = bestScore + " ms";
+        }
+    }
+
+    function endGame() {
+        gameInProgress = false;
+        resetArea("Koniec serii! Sprawdź statystyki.");
+        document.getElementById('btn-start').style.display = 'inline-block';
+        document.getElementById('btn-stop').style.display = 'none';
+    }
+
+    function resetArea(text) {
+        const area = document.getElementById('click-area');
+        area.classList.remove('waiting');
+        area.innerText = text;
+    }
+</script>
+</body>
+</html>
